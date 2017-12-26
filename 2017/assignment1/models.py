@@ -23,6 +23,21 @@ import os
 import numpy as np
 import tensorflow as tf
 
+def conv(input, kernel, biases, k_h, k_w, c_o, s_h, s_w,  padding="VALID", group=1):
+    c_i = input.get_shape()[-1]
+    assert c_i%group==0
+    assert c_o%group==0
+    convolve = lambda i, k: tf.nn.conv2d(i, k, [1, s_h, s_w, 1], padding=padding)
+
+    if group==1:
+        conv = convolve(input, kernel)
+    else:
+        input_groups =  tf.split(input, group, 3)   #tf.split(3, group, input)
+        kernel_groups = tf.split(kernel, group, 3)  #tf.split(3, group, kernel) 
+        output_groups = [convolve(i, k) for i,k in zip(input_groups, kernel_groups)]
+        conv = tf.concat(output_groups, 3)          #tf.concat(3, output_groups)
+    return  tf.reshape(tf.nn.bias_add(conv, biases), [-1]+conv.get_shape().as_list()[1:])
+
 def alexnet_model(inputs, train=True, norm=True, **kwargs):
     """
     AlexNet model definition as defined in the paper:
@@ -71,11 +86,57 @@ def alexnet_model(inputs, train=True, norm=True, **kwargs):
 
     
     with tf.variable_scope('conv1'):
-        Wconv1 = tf.get_variable("Wconv1", shape=[11, 11, 3, 96], tf.float32, tf.contrib.layers.xavier_initializer()) 
-        bconv1 = tf.get_variable("bconv1", shape=[96], tf.float32, initializer=tf.zeros_initializer())
+        Wconv1 = tf.get_variable("weights", shape=[11, 11, 3, 96], tf.float32, tf.contrib.layers.xavier_initializer()) 
+        bconv1 = tf.get_variable("bias", shape=[96], tf.float32, initializer=tf.zeros_initializer())
         #forward pass
-        conv1_out = tf.nn.conv2d(inputs['images'], Wconv1, [1, 4, 4, 1], padding='SAME')
-        tf.nn.relu(conv1_out)
+        conv1_out = tf.nn.relu(tf.nn.conv2d(inputs['images'], Wconv1, [1, 4, 4, 1], padding='SAME') + bconv1)
+        #local response normalisation
+        lrn1 = tf.nn.local_response_normalization(conv1_out,depth_radius=5,alpha=1e-4,beta=0.75,bias=2)
+        #maxpool
+        pool1 = tf.nn.max_pool(lrn1, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='VALID',name='pool')
+        
+        outputs['conv1'] = conv1_out
+        outputs['pool1'] = pool1
+        outputs['conv1_kernel'] = Wconv1
+        
+    with tf.variable_scope('conv2'):
+        k_h = 5; k_w = 5; c_o = 256; s_h = 1; s_w = 1; group = 2
+        Wconv2 = tf.get_variable("weights", shape=[5, 5, 96, 256], tf.float32, tf.contrib.layers.xavier_initializer()) 
+        bconv2 = tf.get_variable("bias", shape=[256], tf.float32, initializer=tf.constant_initializer(0.1))
+        conv2_out = tf.nn.relu(conv(pool1, Wconv2, bconv2, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group))
+        #local response normalisation
+        lrn2 = tf.nn.local_response_normalization(conv2_out,depth_radius=5,alpha=1e-4,beta=0.75,bias=2)
+        #maxpool
+        pool2 = tf.nn.max_pool(lrn2, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='VALID',name='pool')
+        
+        outputs['conv2'] = conv2_out
+        outputs['pool2'] = pool2
+        outputs['conv2_kernel'] = Wconv2
+        
+    with tf.variable_scope('conv3'):
+        k_h = 3; k_w = 3; c_o = 384; s_h = 1; s_w = 1; group=1 #group=1 means full convolution, group =2 means half and half
+        Wconv3 = tf.get_variable("weights", shape=[3, 3, 256, 384], tf.float32, tf.contrib.layers.xavier_initializer()) 
+        bconv3 = tf.get_variable("bias", shape=[384], tf.float32, initializer=tf.zeros_initializer())
+        conv3_out = tf.nn.relu(conv(pool2, Wconv3, bconv3, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group))
+        
+        outputs['conv3'] = conv3_out
+        outputs['conv3_kernel'] = Wconv3
+        
+    with tf.variable_scope('conv4'):
+        k_h = 3; k_w = 3; c_o = 384; s_h = 1; s_w = 1; group = 2
+        Wconv4 = tf.get_variable("weights", shape=[3, 3, 384, 384], tf.float32, tf.contrib.layers.xavier_initializer()) 
+        bconv4 = tf.get_variable("bias", shape=[384], tf.float32, initializer=tf.zeros_initializer())
+        conv4_out = tf.nn.relu(conv(conv3_out, Wconv4, bconv4, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group))
+        
+        outputs['conv4'] = conv4_out
+        outputs['conv4_kernel'] = Wconv4
+        
+    with tf.variable_scope('conv5'):
+        k_h = 3; k_w = 3; c_o = 256; s_h = 1; s_w = 1; group = 2
+        Wconv5 = tf.get_variable("weights", shape=[3, 3, 384, 256], tf.float32, tf.contrib.layers.xavier_initializer()) 
+        bconv5 = tf.get_variable("bias", shape=[256], tf.float32, initializer=tf.zeros_initializer())
+        conv5_out = tf.nn.relu(conv(conv4_out, Wconv5, bconv5, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group))
+        
         
         # hidden layers
         h1 = tf.nn.sigmoid(tf.matmul(inputs['images'], W1) + b1, name='hidden1')
