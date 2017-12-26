@@ -23,26 +23,10 @@ import os
 import numpy as np
 import tensorflow as tf
 
-def conv(input, kernel, biases, k_h, k_w, c_o, s_h, s_w,  padding="VALID", group=1):
-    c_i = input.get_shape()[-1]
-    assert c_i%group==0
-    assert c_o%group==0
-    convolve = lambda i, k: tf.nn.conv2d(i, k, [1, s_h, s_w, 1], padding=padding)
-
-    if group==1:
-        conv = convolve(input, kernel)
-    else:
-        input_groups =  tf.split(input, group, 3)   #tf.split(3, group, input)
-        kernel_groups = tf.split(kernel, group, 3)  #tf.split(3, group, kernel) 
-        output_groups = [convolve(i, k) for i,k in zip(input_groups, kernel_groups)]
-        conv = tf.concat(output_groups, 3)          #tf.concat(3, output_groups)
-    return  tf.reshape(tf.nn.bias_add(conv, biases), [-1]+conv.get_shape().as_list()[1:])
-
 def alexnet_model(inputs, train=True, norm=True, **kwargs):
     """
     AlexNet model definition as defined in the paper:
     https://papers.nips.cc/paper/4824-imagenet-classification-with-deep-convolutional-neural-networks.pdf
-
     You will need to EDIT this function. Please put your AlexNet implementation here.
     
     Note: 
@@ -74,11 +58,24 @@ def alexnet_model(inputs, train=True, norm=True, **kwargs):
     The biases of the conv and fc layers should be initalized with a constant 
     initializer to 0, except for conv2, fc6, and fc7 whose biases should be
     initialized to 0.1.
-
     These steps are necessary to correctly load the pretrained alexnet model
     from the database for the second part of the assignment.
     """
+    def conv(input, kernel, biases, k_h, k_w, c_o, s_h, s_w,  padding="VALID", group=1):
+        c_i = input.get_shape()[-1]
+        assert c_i%group==0
+        assert c_o%group==0
+        convolve = lambda i, k: tf.nn.conv2d(i, k, [1, s_h, s_w, 1], padding=padding)
 
+        if group==1:
+            conv = convolve(input, kernel)
+        else:
+            input_groups =  tf.split(input, group, 3)   #tf.split(3, group, input)
+            kernel_groups = tf.split(kernel, group, 3)  #tf.split(3, group, kernel) 
+            output_groups = [convolve(i, k) for i,k in zip(input_groups, kernel_groups)]
+            conv = tf.concat(output_groups, 3)          #tf.concat(3, output_groups)
+        return  tf.reshape(tf.nn.bias_add(conv, biases), [-1]+conv.get_shape().as_list()[1:])
+    
     # propagate input targets
     outputs = inputs
     dropout = .5 if train else None
@@ -86,8 +83,8 @@ def alexnet_model(inputs, train=True, norm=True, **kwargs):
 
     
     with tf.variable_scope('conv1'):
-        Wconv1 = tf.get_variable("weights", shape=[11, 11, 3, 96], tf.float32, tf.contrib.layers.xavier_initializer()) 
-        bconv1 = tf.get_variable("bias", shape=[96], tf.float32, initializer=tf.zeros_initializer())
+        Wconv1 = tf.get_variable("weights", shape=[11, 11, 3, 96], dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) 
+        bconv1 = tf.get_variable("bias", shape=[96], dtype=tf.float32, initializer=tf.zeros_initializer())
         #forward pass
         conv1_out = tf.nn.relu(tf.nn.conv2d(inputs['images'], Wconv1, [1, 4, 4, 1], padding='SAME') + bconv1)
         #local response normalisation
@@ -101,8 +98,8 @@ def alexnet_model(inputs, train=True, norm=True, **kwargs):
         
     with tf.variable_scope('conv2'):
         k_h = 5; k_w = 5; c_o = 256; s_h = 1; s_w = 1; group = 2
-        Wconv2 = tf.get_variable("weights", shape=[5, 5, 96, 256], tf.float32, tf.contrib.layers.xavier_initializer()) 
-        bconv2 = tf.get_variable("bias", shape=[256], tf.float32, initializer=tf.constant_initializer(0.1))
+        Wconv2 = tf.get_variable("weights", shape=[5, 5, 48, 256], dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) 
+        bconv2 = tf.get_variable("bias", shape=[256], dtype=tf.float32, initializer=tf.constant_initializer(0.1))
         conv2_out = tf.nn.relu(conv(pool1, Wconv2, bconv2, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group))
         #local response normalisation
         lrn2 = tf.nn.local_response_normalization(conv2_out,depth_radius=5,alpha=1e-4,beta=0.75,bias=2)
@@ -115,8 +112,8 @@ def alexnet_model(inputs, train=True, norm=True, **kwargs):
         
     with tf.variable_scope('conv3'):
         k_h = 3; k_w = 3; c_o = 384; s_h = 1; s_w = 1; group=1 #group=1 means full convolution, group =2 means half and half
-        Wconv3 = tf.get_variable("weights", shape=[3, 3, 256, 384], tf.float32, tf.contrib.layers.xavier_initializer()) 
-        bconv3 = tf.get_variable("bias", shape=[384], tf.float32, initializer=tf.zeros_initializer())
+        Wconv3 = tf.get_variable("weights", shape=[3, 3, 256, 384], dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) 
+        bconv3 = tf.get_variable("bias", shape=[384], dtype=tf.float32, initializer=tf.zeros_initializer())
         conv3_out = tf.nn.relu(conv(pool2, Wconv3, bconv3, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group))
         
         outputs['conv3'] = conv3_out
@@ -124,8 +121,8 @@ def alexnet_model(inputs, train=True, norm=True, **kwargs):
         
     with tf.variable_scope('conv4'):
         k_h = 3; k_w = 3; c_o = 384; s_h = 1; s_w = 1; group = 2
-        Wconv4 = tf.get_variable("weights", shape=[3, 3, 384, 384], tf.float32, tf.contrib.layers.xavier_initializer()) 
-        bconv4 = tf.get_variable("bias", shape=[384], tf.float32, initializer=tf.zeros_initializer())
+        Wconv4 = tf.get_variable("weights", shape=[3, 3, 192, 384], dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) 
+        bconv4 = tf.get_variable("bias", shape=[384], dtype=tf.float32, initializer=tf.zeros_initializer())
         conv4_out = tf.nn.relu(conv(conv3_out, Wconv4, bconv4, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group))
         
         outputs['conv4'] = conv4_out
@@ -133,8 +130,8 @@ def alexnet_model(inputs, train=True, norm=True, **kwargs):
         
     with tf.variable_scope('conv5'):
         k_h = 3; k_w = 3; c_o = 256; s_h = 1; s_w = 1; group = 2
-        Wconv5 = tf.get_variable("weights", shape=[3, 3, 384, 256], tf.float32, tf.contrib.layers.xavier_initializer()) 
-        bconv5 = tf.get_variable("bias", shape=[256], tf.float32, initializer=tf.zeros_initializer())
+        Wconv5 = tf.get_variable("weights", shape=[3, 3, 192, 256], dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) 
+        bconv5 = tf.get_variable("bias", shape=[256], dtype=tf.float32, initializer=tf.zeros_initializer())
         conv5_out = tf.nn.relu(conv(conv4_out, Wconv5, bconv5, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group))
         #maxpool
         pool5 = tf.nn.max_pool(conv5_out, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='VALID',name='pool')
@@ -144,24 +141,24 @@ def alexnet_model(inputs, train=True, norm=True, **kwargs):
         outputs['conv5_kernel'] = Wconv5
         
     with tf.variable_scope('fc6'):
-        Wfc6 = tf.get_variable("weights", shape=[int(prod(pool5.get_shape()[1:])),4096], tf.float32, tf.truncated_normal_initializer()) 
-        bfc6 = tf.get_variable("bias", shape=[4096], tf.float32, initializer=tf.constant_initializer(0.1))
-        fc6_out = tf.nn.relu_layer(tf.reshape(pool5, [-1, int(prod(pool5.get_shape()[1:]))]), Wfc6, bfc6)
+        Wfc6 = tf.get_variable("weights", shape=[int(np.prod(pool5.get_shape()[1:])),4096], dtype=tf.float32, initializer=tf.truncated_normal_initializer()) 
+        bfc6 = tf.get_variable("bias", shape=[4096], dtype=tf.float32, initializer=tf.constant_initializer(0.1))
+        fc6_out = tf.nn.relu_layer(tf.reshape(pool5, [-1, int(np.prod(pool5.get_shape()[1:]))]), Wfc6, bfc6)
 
         outputs['fc6'] = fc6_out
         outputs['fc6_kernel'] = Wfc6
         
     with tf.variable_scope('fc7'):
-        Wfc7 = tf.get_variable("weights", shape=[4096,4096], tf.float32, tf.truncated_normal_initializer()) 
-        bfc7 = tf.get_variable("bias", shape=[4096], tf.float32, initializer=tf.constant_initializer(0.1))
+        Wfc7 = tf.get_variable("weights", shape=[4096,4096], dtype=tf.float32, initializer=tf.truncated_normal_initializer()) 
+        bfc7 = tf.get_variable("bias", shape=[4096], dtype=tf.float32, initializer=tf.constant_initializer(0.1))
         fc7_out = tf.nn.relu_layer(fc6_out, Wfc7, bfc7)
 
         outputs['fc7'] = fc7_out
         outputs['fc7_kernel'] = Wfc7
         
     with tf.variable_scope('fc8'):
-        Wfc8 = tf.get_variable("weights", shape=[4096,1000], tf.float32, tf.truncated_normal_initializer()) 
-        bfc8 = tf.get_variable("bias", shape=[1000], tf.float32, initializer=tf.constant_initializer(0.0))
+        Wfc8 = tf.get_variable("weights", shape=[4096,1000], dtype=tf.float32, initializer=tf.truncated_normal_initializer()) 
+        bfc8 = tf.get_variable("bias", shape=[1000], dtype=tf.float32, initializer=tf.constant_initializer(0.0))
         fc8_out = tf.nn.xw_plus_b(fc7_out, Wfc8, bfc8)
 
         outputs['fc8'] = fc8_out
