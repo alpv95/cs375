@@ -69,9 +69,19 @@ def alexnet_model(inputs, train=True, norm=True, **kwargs):
     dropout = .5 if train else None
     input_to_network = inputs['images']
 
-    ### YOUR CODE HERE
-
-    ### END OF YOUR CODE
+    
+    with tf.variable_scope('conv1'):
+        Wconv1 = tf.get_variable("Wconv1", shape=[11, 11, 3, 96], tf.float32, tf.contrib.layers.xavier_initializer()) 
+        bconv1 = tf.get_variable("bconv1", shape=[96], tf.float32, initializer=tf.zeros_initializer())
+        #forward pass
+        conv1_out = tf.nn.conv2d(inputs['images'], Wconv1, [1, 4, 4, 1], padding='SAME')
+        tf.nn.relu(conv1_out)
+        
+        # hidden layers
+        h1 = tf.nn.sigmoid(tf.matmul(inputs['images'], W1) + b1, name='hidden1')
+        h2 = tf.nn.sigmoid(tf.matmul(h1, W2) + b2, name='hidden2')
+        # output
+        output = tf.matmul(h2, W3) + b3
 
     for k in ['conv1', 'conv2', 'conv3', 'conv4', 'conv5', 'pool1',
             'pool2', 'pool5', 'fc6', 'fc7', 'fc8', 'conv1_kernel', 'pred']:
