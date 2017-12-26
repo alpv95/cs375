@@ -211,7 +211,7 @@ class ImageNetExperiment():
         params['loss_params'] = {
             'targets': ['labels'],
             'agg_func': tf.reduce_mean,
-            'loss_per_case_func': EDIT_YOUR_LOSS_PER_CASE_FUNC_HERE,
+            'loss_per_case_func': tf.nn.sparse_softmax_cross_entropy_with_logits,
             'loss_per_case_func_params' : {'_outputs': 'outputs', 
                 '_targets_$all': 'inputs'},
             'loss_func_kwargs' : {},
@@ -237,11 +237,10 @@ class ImageNetExperiment():
         """
         
         params['learning_rate_params'] = {
-            'func': tf.train.exponential_decay,
-            'learning_rate': 0.01,
-            'decay_steps': ImageNetDataProvider.N_TRAIN / self.batch_size,
-            'decay_rate': 0.95,
-            'staircase': True,
+            'func': tf.train.piecewise_constant,
+            'x': global_step,
+            'values': [0.01, 0.005, 0.001, 0.0005],
+            'boundaries': list(np.array([150000, 300000, 450000]).astype(np.int64))
         }
 
         """
@@ -253,7 +252,7 @@ class ImageNetExperiment():
         """
         params['optimizer_params'] = {
             'func': optimizer.ClipOptimizer,
-            'optimizer_class': tf.train.AdamOptimizer,
+            'optimizer_class': tf.train.MomentumOptimizer,
             'clip': False,
             'momentum': .9,
         }
@@ -267,11 +266,11 @@ class ImageNetExperiment():
         have changed mongodb.conf), 'dbname', 'collname', and 'exp_id'. 
         """
         params['save_params'] = {
-            'host': EDIT_YOUR_HOST,
-            'port': EDIT_YOUR_PORT,
-            'dbname': EDIT_YOUR_DBNAME,
-            'collname': EDIT_YOUR_COLLNAME,
-            'exp_id': EDIT_YOUR_EXP_ID,
+            'host': 'localhost',
+            'port': 19988,
+            'dbname': 'alexnet',
+            'collname': 'alexnet.files',
+            'exp_id': 'exp_111',
             'save_valid_freq': 10000,
             'save_filters_freq': 30000,
             'cache_filters_freq': 50000,
@@ -291,11 +290,11 @@ class ImageNetExperiment():
         as in 'save_params'.
         """
         params['load_params'] = {
-            'host': EDIT_YOUR_HOST,
-            'port': EDIT_YOUR_PORT,
-            'dbname': EDIT_YOUR_DBNAME,
-            'collname': EDIT_YOUR_COLLNAME,
-            'exp_id': EDIT_YOUR_EXP_ID,
+            'host': 'localhost',
+            'port': 19988,
+            'dbname': 'alexnet',
+            'collname': 'alexnet.files',
+            'exp_id': 'exp_111',
             'do_restore': False,
             'load_query': None,
         }
@@ -314,8 +313,8 @@ class ImageNetExperiment():
         You will need to EDIT this part. Implement the top1 and top5 functions
         in the respective dictionary entry.
         """
-        return {'top1': YOUR_TOP1_FUNCTION_CALL_HERE,
-                'top5': YOUR_TOP5_FUNCTION_CALL_HERE}
+        return {'top1': tf.nn.in_top_k(outputs, inputs['labels'], 1),
+                'top5': tf.nn.in_top_k(outputs, inputs['labels'], 5)}
 
 
     def subselect_tfrecords(self, path):
