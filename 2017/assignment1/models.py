@@ -136,13 +136,38 @@ def alexnet_model(inputs, train=True, norm=True, **kwargs):
         Wconv5 = tf.get_variable("weights", shape=[3, 3, 384, 256], tf.float32, tf.contrib.layers.xavier_initializer()) 
         bconv5 = tf.get_variable("bias", shape=[256], tf.float32, initializer=tf.zeros_initializer())
         conv5_out = tf.nn.relu(conv(conv4_out, Wconv5, bconv5, k_h, k_w, c_o, s_h, s_w, padding="SAME", group=group))
+        #maxpool
+        pool5 = tf.nn.max_pool(conv5_out, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding='VALID',name='pool')
         
+        outputs['conv5'] = conv5_out
+        outputs['pool5'] = pool5
+        outputs['conv5_kernel'] = Wconv5
         
-        # hidden layers
-        h1 = tf.nn.sigmoid(tf.matmul(inputs['images'], W1) + b1, name='hidden1')
-        h2 = tf.nn.sigmoid(tf.matmul(h1, W2) + b2, name='hidden2')
-        # output
-        output = tf.matmul(h2, W3) + b3
+    with tf.variable_scope('fc6'):
+        Wfc6 = tf.get_variable("weights", shape=[int(prod(pool5.get_shape()[1:])),4096], tf.float32, tf.truncated_normal_initializer()) 
+        bfc6 = tf.get_variable("bias", shape=[4096], tf.float32, initializer=tf.constant_initializer(0.1))
+        fc6_out = tf.nn.relu_layer(tf.reshape(pool5, [-1, int(prod(pool5.get_shape()[1:]))]), Wfc6, bfc6)
+
+        outputs['fc6'] = fc6_out
+        outputs['fc6_kernel'] = Wfc6
+        
+    with tf.variable_scope('fc7'):
+        Wfc7 = tf.get_variable("weights", shape=[4096,4096], tf.float32, tf.truncated_normal_initializer()) 
+        bfc7 = tf.get_variable("bias", shape=[4096], tf.float32, initializer=tf.constant_initializer(0.1))
+        fc7_out = tf.nn.relu_layer(fc6_out, Wfc7, bfc7)
+
+        outputs['fc7'] = fc7_out
+        outputs['fc7_kernel'] = Wfc7
+        
+    with tf.variable_scope('fc8'):
+        Wfc8 = tf.get_variable("weights", shape=[4096,1000], tf.float32, tf.truncated_normal_initializer()) 
+        bfc8 = tf.get_variable("bias", shape=[1000], tf.float32, initializer=tf.constant_initializer(0.0))
+        fc8_out = tf.nn.xw_plus_b(fc7_out, Wfc8, bfc8)
+
+        outputs['fc8'] = fc8_out
+        outputs['fc8_kernel'] = Wfc8
+        outputs['pred'] = fc8_out
+        
 
     for k in ['conv1', 'conv2', 'conv3', 'conv4', 'conv5', 'pool1',
             'pool2', 'pool5', 'fc6', 'fc7', 'fc8', 'conv1_kernel', 'pred']:
